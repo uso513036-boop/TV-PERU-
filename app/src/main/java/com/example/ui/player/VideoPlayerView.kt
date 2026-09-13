@@ -70,12 +70,14 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.example.data.model.Channel
 import com.example.data.model.Program
+import com.example.data.repository.EpgRepository
 import com.example.ui.theme.LiveBadgeRed
 import com.example.ui.theme.PeruGold
 import com.example.ui.theme.PeruRedPrimary
 import com.example.ui.viewmodel.ResizeMode
 import com.example.util.NetworkSecurityHelper
 import kotlinx.coroutines.delay
+import java.time.ZonedDateTime
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -99,6 +101,15 @@ fun VideoPlayerView(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var currentStreamUrl by remember(channel.id) { mutableStateOf(channel.streamUrl) }
     var triedBackup by remember(channel.id) { mutableStateOf(false) }
+    var peruNow by remember { mutableStateOf(EpgRepository.getCurrentPeruTime()) }
+
+    // Update current time every 15 seconds for live progress
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(15_000)
+            peruNow = EpgRepository.getCurrentPeruTime()
+        }
+    }
 
     var areControlsVisible by remember { mutableStateOf(true) }
 
@@ -297,8 +308,24 @@ fun VideoPlayerView(
                         onClick = {
                             errorMessage = null
                             isBuffering = true
-                            exoPlayer.prepare()
-                            exoPlayer.play()
+                            // Switch feed if backup is available to give the user alternate server immediately
+                            if (channel.backupStreamUrl.isNotBlank()) {
+                                currentStreamUrl = if (currentStreamUrl == channel.streamUrl) {
+                                    triedBackup = true
+                                    channel.backupStreamUrl
+                                } else {
+                                    triedBackup = false
+                                    channel.streamUrl
+                                }
+                            }
+                            try {
+                                val mediaItem = MediaItem.fromUri(currentStreamUrl)
+                                exoPlayer.setMediaItem(mediaItem)
+                                exoPlayer.prepare()
+                                exoPlayer.play()
+                            } catch (e: Exception) {
+                                errorMessage = "Error en la transmisión"
+                            }
                         },
                         shape = RoundedCornerShape(20.dp),
                         color = PeruRedPrimary,
@@ -428,6 +455,27 @@ fun VideoPlayerView(
                                 )
                             }
                         }
+
+                        if (channel.backupStreamUrl.isNotBlank()) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                onClick = {
+                                    val nextUrl = if (currentStreamUrl == channel.streamUrl) channel.backupStreamUrl else channel.streamUrl
+                                    currentStreamUrl = nextUrl
+                                },
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color.White.copy(alpha = 0.25f),
+                                modifier = Modifier.testTag("server_switch_button")
+                            ) {
+                                Text(
+                                    text = if (currentStreamUrl == channel.streamUrl) "Señal 1" else "Señal 2",
+                                    color = Color.White,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -532,7 +580,6 @@ fun VideoPlayerView(
                         Spacer(modifier = Modifier.height(6.dp))
 
                         // Live Progress Bar for current show
-                        val peruNow = remember { java.time.ZonedDateTime.now(java.time.ZoneId.of("America/Lima")) }
                         val progress = currentProgram.calculateProgress(peruNow.hour, peruNow.minute)
                         LinearProgressIndicator(
                             progress = { progress },
