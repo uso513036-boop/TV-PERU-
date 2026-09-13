@@ -1,0 +1,6 @@
+{
+  "name": "TV Perú",
+  "description": "Televisión peruana en vivo con reproductor interno y guía de programación EPG real y actualizada.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
